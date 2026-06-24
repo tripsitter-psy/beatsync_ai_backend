@@ -1,0 +1,30 @@
+# Ignore venv and cache
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore local database and environment secrets
+mock_db.json
+.env
+.env.local
+.env.development
+.env.production
+.env.copy
+
+# Ignore uploads and runtime assets (we mount or re-upload these)
+uploads/*
+!uploads/.gitkeep
+songs/*
+!songs/manifest.json
+!songs/*.mp3
+!songs/*.m4a
+
+# Ignore version control and agent configs
+.git/
+.gitignore
+.claude/
+.agents/
+.DS_Store

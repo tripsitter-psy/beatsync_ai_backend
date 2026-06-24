@@ -1,0 +1,17 @@
+# Secrets — never commit these
+.env
+.env copy
+.env.*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Runtime data
+uploads/
+mock_db.json
+
+# macOS
+.DS_Store
