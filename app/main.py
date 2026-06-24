@@ -19,6 +19,10 @@ from app import credits
 
 app = FastAPI(title="BeatSync AI Backend", description="API for processing video with SCAIL-2")
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "BeatSync AI Backend"}
+
 # Base URL the mobile client uses to reach this server. Override via env so the
 # app keeps working when the dev machine's LAN IP changes or in production.
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://192.168.1.169:8000")
