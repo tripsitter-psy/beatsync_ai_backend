@@ -134,7 +134,7 @@ def describe_props(props: str) -> str:
 def build_prompt(style_id: str, props: str = None) -> str:
     """Build the full fal prompt for a style + optional props. Shared by the
     preview endpoint and the render so both send identical text."""
-    base_prompt = prompts.get(style_id, skeleton_prompt)
+    base_prompt = prompts.get(style_id, style_id)
     prompt = base_prompt + (
         ", exactly tracking the original human movement, humanoid figure, solo, "
         "full body, continuous single take, no scene cuts, seamless motion."
@@ -155,7 +155,7 @@ def build_reference_prompt(style_id: str, props: str = None) -> str:
     images ("no subject detected"), so the reference must be a single, clearly
     visible, full-body character on a clean background — NOT the original scene.
     """
-    base_prompt = prompts.get(style_id, skeleton_prompt)
+    base_prompt = prompts.get(style_id, style_id)
     prompt = base_prompt + (
         " A single full-body character, centered and clearly visible, standing on "
         "a clean plain neutral studio background, sharp and well-lit, masterpiece."
