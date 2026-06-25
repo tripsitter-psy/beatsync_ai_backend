@@ -721,3 +721,56 @@ async def delete_user_account(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
 
 
+@app.get("/api/v1/diagnose")
+async def diagnose():
+    import subprocess
+    diag = {}
+    
+    # 1. Env vars
+    diag["fal_key_exists"] = "FAL_KEY" in os.environ
+    if diag["fal_key_exists"]:
+        key = os.environ["FAL_KEY"]
+        diag["fal_key_len"] = len(key)
+        diag["fal_key_preview"] = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "too short"
+    else:
+        diag["fal_key_preview"] = None
+        
+    diag["supabase_url_exists"] = "SUPABASE_URL" in os.environ
+    diag["supabase_key_exists"] = "SUPABASE_KEY" in os.environ
+    diag["public_base_url"] = os.environ.get("PUBLIC_BASE_URL")
+    
+    # 2. Check ffmpeg
+    try:
+        res = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
+        diag["ffmpeg_status"] = "installed"
+        diag["ffmpeg_version"] = res.stdout.splitlines()[0] if res.stdout else "unknown"
+    except Exception as e:
+        diag["ffmpeg_status"] = f"failed: {str(e)}"
+        
+    # 3. Check writes
+    try:
+        test_path = "uploads/diag_test.txt"
+        with open(test_path, "w") as f:
+            f.write("test")
+        diag["write_uploads_status"] = "ok"
+        os.remove(test_path)
+    except Exception as e:
+        diag["write_uploads_status"] = f"failed: {str(e)}"
+        
+    # 4. Check Fal upload
+    try:
+        test_path = "uploads/diag_test.txt"
+        with open(test_path, "w") as f:
+            f.write("test")
+        import fal_client
+        url = await fal_client.upload_file_async(test_path)
+        diag["fal_upload_status"] = "ok"
+        diag["fal_upload_url"] = url
+        os.remove(test_path)
+    except Exception as e:
+        diag["fal_upload_status"] = f"failed: {str(e)}"
+        
+    return diag
+
+
+
