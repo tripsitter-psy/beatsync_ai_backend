@@ -736,7 +736,14 @@ async def diagnose():
         diag["fal_key_preview"] = None
         
     diag["supabase_url_exists"] = "SUPABASE_URL" in os.environ
+    diag["supabase_url_val"] = os.environ.get("SUPABASE_URL")
     diag["supabase_key_exists"] = "SUPABASE_KEY" in os.environ
+    if diag["supabase_key_exists"]:
+        skey = os.environ["SUPABASE_KEY"]
+        diag["supabase_key_len"] = len(skey)
+        diag["supabase_key_preview"] = f"{skey[:8]}...{skey[-8:]}" if len(skey) > 16 else "too short"
+    else:
+        diag["supabase_key_preview"] = None
     diag["public_base_url"] = os.environ.get("PUBLIC_BASE_URL")
     
     # 2. Check ffmpeg
