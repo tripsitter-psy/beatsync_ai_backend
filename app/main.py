@@ -721,6 +721,52 @@ async def delete_user_account(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
 
 
+@app.get("/api/v1/debug-last-upload")
+async def debug_last_upload():
+    import glob
+    import subprocess
+    
+    # 1. Find the latest file in uploads/
+    files = glob.glob("uploads/*")
+    video_files = [f for f in files if f.endswith((".mp4", ".mov", ".3gp"))]
+    if not video_files:
+        return {"status": "error", "message": "No video files found in uploads/"}
+        
+    latest_video = max(video_files, key=os.path.getmtime)
+    
+    # 2. Run ffmpeg on it
+    out_frame = "uploads/debug_extract_test.jpg"
+    if os.path.exists(out_frame):
+        os.remove(out_frame)
+        
+    cmd = ["ffmpeg", "-i", latest_video, "-vframes", "1", "-y", out_frame]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    
+    result = {
+        "latest_video": latest_video,
+        "video_size_bytes": os.path.getsize(latest_video),
+        "ffmpeg_cmd": " ".join(cmd),
+        "ffmpeg_returncode": res.returncode,
+        "ffmpeg_stdout": res.stdout,
+        "ffmpeg_stderr": res.stderr,
+        "frame_extracted_successfully": os.path.exists(out_frame)
+    }
+    
+    # 3. Try Fal upload if frame was extracted
+    if result["frame_extracted_successfully"]:
+        try:
+            import fal_client
+            url = await fal_client.upload_file_async(out_frame)
+            result["fal_upload_status"] = "success"
+            result["fal_upload_url"] = url
+            os.remove(out_frame)
+        except Exception as e:
+            result["fal_upload_status"] = f"failed: {str(e)}"
+            
+    return result
+
+
+
 
 
 
