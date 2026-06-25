@@ -18,8 +18,10 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://192.168.1.169:8000")
 def _local_path_for(url: str) -> str | None:
     """If `url` is served by this backend, return its local file path; else None
     (e.g. an external fal.ai URL that should be left untouched)."""
-    if url.startswith(PUBLIC_BASE_URL):
-        return url[len(PUBLIC_BASE_URL):].lstrip("/")
+    for folder in ["uploads", "songs"]:
+        if f"/{folder}/" in url:
+            idx = url.index(f"/{folder}/")
+            return url[idx:].lstrip("/")
     return None
 
 async def extract_and_stylize_first_frame(video_url: str, prompt: str, on_progress=None) -> str:

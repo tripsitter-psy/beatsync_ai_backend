@@ -387,8 +387,14 @@ async def generate_character_pipeline(job_id: str, request: GenerateCharacterReq
         # SCAIL-2 caps the driving video at 160 frames, so re-encode any local
         # input to a short, fixed-fps clip well under that. RE-ENCODE (not copy)
         # and a proper filename (handles .mov etc.) so the cap is always applied.
-        if video_url_to_process.startswith(PUBLIC_BASE_URL):
-            local_path = video_url_to_process.replace(f"{PUBLIC_BASE_URL}/", "")
+        local_path = None
+        for folder in ["uploads", "songs"]:
+            if f"/{folder}/" in video_url_to_process:
+                idx = video_url_to_process.index(f"/{folder}/")
+                local_path = video_url_to_process[idx:].lstrip("/")
+                break
+
+        if local_path:
             base, _ = os.path.splitext(local_path)
             trimmed_path = f"{base}_scail.mp4"
             secs = os.getenv("SCAIL2_INPUT_SECONDS", "5")  # 5s @ 24fps = 120 frames < 160
