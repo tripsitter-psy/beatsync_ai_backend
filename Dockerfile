@@ -22,5 +22,9 @@ COPY . .
 # Expose the port FastAPI runs on
 EXPOSE 8000
 
-# Run the app with uvicorn using sh to resolve dynamic port mapping
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Copy and set up the entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Run the app via entrypoint script for reliable PORT variable expansion
+CMD ["/app/entrypoint.sh"]
