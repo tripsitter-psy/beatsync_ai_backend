@@ -22,5 +22,5 @@ COPY . .
 # Expose the port FastAPI runs on
 EXPOSE 8000
 
-# Run the app with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the app with uvicorn using sh to resolve dynamic port mapping
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
