@@ -153,12 +153,12 @@ def build_reference_prompt(style_id: str, props: str = None) -> str:
 
     SCAIL-2 runs a subject detector on image_url and rejects scene-embedded
     images ("no subject detected"), so the reference must be a single, clearly
-    visible, full-body character on a clean background — NOT the original scene.
+    visible character on a clean background — NOT the original scene.
     """
     base_prompt = prompts.get(style_id, style_id)
     prompt = base_prompt + (
-        " A single full-body character, centered and clearly visible, standing on "
-        "a clean plain neutral studio background, sharp and well-lit, masterpiece."
+        " A single centered clearly visible character on a clean plain neutral studio background, "
+        "sharp and well-lit, masterpiece."
     )
     if props and props.strip():
         described = describe_props(props)
