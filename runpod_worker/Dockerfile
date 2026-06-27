@@ -48,10 +48,13 @@ RUN cmake -S engine -B engine/build -G Ninja \
         -DOPTION_REQUIRE_TRIPSITTER=OFF \
  && cmake --build engine/build --target beatsync_backend_shared -j"$(nproc)"
 
-RUN mkdir -p /out \
+# Ship the engine .so, libaudioflux.so, and AudioFlux's bundled MKL+OpenMP libs
+# (the wheel keeps them in audioflux/lib/lib/ — libaudioflux.so needs them at runtime).
+RUN mkdir -p /out/lib \
  && cp "$(find engine/build -name 'libbeatsync_backend_shared.so' | head -1)" /out/ \
  && cp engine/third_party/audioflux/lib/libaudioflux.so /out/ \
- && ldd /out/libbeatsync_backend_shared.so
+ && cp -r /tmp/af/x/audioflux/lib/lib/. /out/lib/ \
+ && ldd /out/libbeatsync_backend_shared.so || true
 
 # ──────────────────────────── runtime ────────────────────────────
 FROM ubuntu:24.04
@@ -61,13 +64,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 # libfftw3-single3 = libfftw3f.so.3 that AudioFlux needs at runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip ffmpeg \
-        libsamplerate0 libgomp1 libfftw3-single3 ca-certificates \
+        libsamplerate0 libgomp1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=builder /out/ /opt/beatsync/
+# Engine loads libaudioflux.so, which needs its bundled MKL+OpenMP libs in ./lib.
 ENV BEATSYNC_DYLIB_DIR=/opt/beatsync
+ENV LD_LIBRARY_PATH=/opt/beatsync:/opt/beatsync/lib
 
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
