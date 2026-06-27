@@ -11,15 +11,20 @@ returns False and callers fall back to the Python path. Nothing here raises at
 import time.
 """
 import os
+import sys
 import ctypes
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Shared-library extension: macOS dev box uses .dylib, the Linux RunPod worker .so.
+_EXT = "dylib" if sys.platform == "darwin" else "so"
+
 # Where the built engine lives. Override with BEATSYNC_DYLIB_DIR for other hosts.
 _DEFAULT_DIR = "/Users/tripsitter/Documents/tripsitters_audio_beatsync_GUI/build-mac"
 _ENGINE_DIR = os.environ.get("BEATSYNC_DYLIB_DIR", _DEFAULT_DIR)
-_LIB_NAME = "libbeatsync_backend_shared.dylib"
+_LIB_NAME = f"libbeatsync_backend_shared.{_EXT}"
+_AUDIOFLUX_NAME = f"libaudioflux.{_EXT}"
 
 
 class _BeatGrid(ctypes.Structure):
@@ -54,7 +59,7 @@ def _load_library():
     """Load the engine dylib + its sibling deps. Returns the CDLL or None."""
     try:
         # Preload @rpath siblings so the loader resolves them.
-        sibling = os.path.join(_ENGINE_DIR, "libaudioflux.dylib")
+        sibling = os.path.join(_ENGINE_DIR, _AUDIOFLUX_NAME)
         if os.path.exists(sibling):
             ctypes.CDLL(sibling, mode=ctypes.RTLD_GLOBAL)
         lib_path = os.path.join(_ENGINE_DIR, _LIB_NAME)
@@ -183,6 +188,7 @@ def build_montage(
     audio_path: str | None = None,
     effects: bool = True,
     audio_start: float = 0.0,
+    fx: dict | None = None,
 ) -> str | None:
     """
     Cut local clips at the beat times into a montage, optionally apply
@@ -218,14 +224,26 @@ def build_montage(
             return None
 
         stage = tmp_cut
-        if effects:
+        # Build the effects config from the client's choices, falling back to the
+        # previous hardcoded look. The client's master switch (fx["enabled"]=False)
+        # skips the effects pass entirely for a clean cut.
+        fx = fx or {}
+        if effects and fx.get("enabled", True):
+            flash = float(fx.get("flash_intensity", 0.35))
+            zoom = float(fx.get("zoom_intensity", 0.12))
+            transition = str(fx.get("transition", "none"))
+            color = str(fx.get("color_preset", "vibrant"))
+            divisor = int(fx.get("beat_divisor", 1)) or 1
             cfg = _EffectsConfig(
-                enableTransitions=0, transitionType=b"fade", transitionDuration=0.12,
-                enableColorGrade=1, colorPreset=b"vibrant",
+                enableTransitions=1 if transition != "none" else 0,
+                transitionType=(transition if transition != "none" else "fade").encode(),
+                transitionDuration=0.12,
+                enableColorGrade=1 if color != "none" else 0,
+                colorPreset=(color if color != "none" else "vibrant").encode(),
                 enableVignette=1, vignetteStrength=0.25,
-                enableBeatFlash=1, flashIntensity=0.35,
-                enableBeatZoom=1, zoomIntensity=0.12,
-                effectBeatDivisor=1, effectStartTime=0.0, effectEndTime=-1.0,
+                enableBeatFlash=1 if flash > 0 else 0, flashIntensity=flash,
+                enableBeatZoom=1 if zoom > 0 else 0, zoomIntensity=zoom,
+                effectBeatDivisor=divisor, effectStartTime=0.0, effectEndTime=-1.0,
             )
             if _LIB.bs_video_set_effects_config(writer, ctypes.byref(cfg)) == 0:
                 rc = _LIB.bs_video_apply_effects(writer, tmp_cut.encode(), tmp_fx.encode(), beat_arr, len(beats))

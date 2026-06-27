@@ -15,6 +15,7 @@ from app.services.beat_service import analyze_audio_beats
 from app.services.fal_service import run_scail2_animation, extract_and_stylize_first_frame, build_reference_prompt, interpolate_with_rife, upscale_video
 from app.services.ffmpeg_service import compose_final_video
 from app.services import beatsync_engine
+from app.services import runpod_client
 from app import credits
 
 app = FastAPI(title="BeatSync AI Backend", description="API for processing video with SCAIL-2")
@@ -75,6 +76,10 @@ class BeatSyncRequest(BaseModel):
     mode: str = "beat_sync"
     # Where in the track to start the montage (seconds). None = auto intro-skip.
     start_sec: Optional[float] = None
+    # Optional DJ-style effects from the client. None = engine defaults.
+    # Keys: enabled, flash_intensity, zoom_intensity, transition, color_preset,
+    # beat_divisor. Only applied when the BeatSync engine is available.
+    effects: Optional[dict] = None
 
 # A beat-sync montage needs enough clips to be worthwhile, and a sane upper cap.
 BEAT_SYNC_MIN_CLIPS = 5
@@ -467,10 +472,30 @@ async def beat_sync_pipeline(job_id: str, request: BeatSyncRequest):
         update_job("processing_audio", 10)
         song = _get_song(request.song_id)
 
-        # Preferred path: the real BeatSync C++ engine — real beat detection off
-        # the actual track, multi-clip cut, audio mux, and beat-synced effects.
         engine_url = None
-        if beatsync_engine.is_available() and song:
+
+        # Production path: the RunPod Serverless engine worker (Linux build of the
+        # C++ engine). The worker fetches the clips + song by URL, so it needs
+        # publicly reachable URLs. Only used when RUNPOD_* env is configured.
+        if runpod_client.is_available() and song:
+            intro_skip = float(song.get("start_sec") or os.environ.get("INTRO_SKIP_SECONDS", "60"))
+            payload = {
+                "clip_urls": request.clip_urls,
+                "song_url": f"{PUBLIC_BASE_URL}/songs/{song['file']}",
+                "bpm": float(song.get("bpm", 0)),
+                "start_sec": request.start_sec,
+                "intro_skip": intro_skip,
+                "montage_seconds": MONTAGE_SECONDS,
+                "effects": request.effects,
+            }
+            update_job("compositing", 40)
+            engine_url = await runpod_client.run_montage(payload)
+            if not engine_url:
+                print(f"RunPod worker unavailable/failed for {job_id}; trying local engine / Python path.")
+
+        # Local-dev path: the engine running on this host (macOS). Real beat
+        # detection off the actual track, multi-clip cut, audio mux, effects.
+        if not engine_url and beatsync_engine.is_available() and song:
             try:
                 audio_path = os.path.join("songs", song["file"])
                 grid = await asyncio.to_thread(
@@ -497,6 +522,7 @@ async def beat_sync_pipeline(job_id: str, request: BeatSyncRequest):
                             result = await asyncio.to_thread(
                                 beatsync_engine.build_montage,
                                 local_clips, beats, out_path, 0.0, audio_path, True, start_beat,
+                                request.effects,
                             )
                             if result:
                                 engine_url = f"{PUBLIC_BASE_URL}/{out_path}"
