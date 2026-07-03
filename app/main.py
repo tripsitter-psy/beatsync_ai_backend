@@ -461,6 +461,47 @@ async def _download_clips_local(clip_urls, job_id: str):
                 print(f"clip download failed {url}: {e}")
     return paths
 
+async def _mux_song_audio(job_id: str, video_url: str, request: BeatSyncRequest) -> str:
+    """Mux the selected song into a (silent) montage. Returns the muxed URL, or
+    the original url unchanged on any failure — never blocks the job."""
+    try:
+        song = _get_song(request.song_id)
+        if not song:
+            return video_url
+        audio_path = os.path.join("songs", song["file"])
+        if not os.path.exists(audio_path):
+            return video_url
+
+        # Bring the video local (upscale may have returned a fal.media URL).
+        if video_url.startswith(PUBLIC_BASE_URL):
+            local_video = video_url.replace(f"{PUBLIC_BASE_URL}/", "")
+        else:
+            local_video = f"uploads/{job_id}_pre_mux.mp4"
+            async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+                r = await client.get(video_url)
+                r.raise_for_status()
+                with open(local_video, "wb") as f:
+                    f.write(r.content)
+
+        # Start the audio at the user's chosen section / the drop.
+        skip = request.start_sec if request.start_sec is not None else float(
+            song.get("start_sec") or os.environ.get("INTRO_SKIP_SECONDS", "60"))
+        out_path = f"uploads/{job_id}_final.mp4"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", local_video,
+            "-ss", f"{skip:.3f}", "-i", audio_path,
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+            out_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await proc.communicate()
+        if proc.returncode == 0 and os.path.exists(out_path):
+            return f"{PUBLIC_BASE_URL}/{out_path}"
+        print(f"audio mux failed for {job_id}: {stderr.decode()[-200:]}")
+    except Exception as e:
+        print(f"audio mux error for {job_id}: {e}")
+    return video_url
+
 async def beat_sync_pipeline(job_id: str, request: BeatSyncRequest):
     try:
         def update_job(status: str, progress: int, output_url: str = None):
@@ -542,7 +583,7 @@ async def beat_sync_pipeline(job_id: str, request: BeatSyncRequest):
             print(f"Beat sync job {job_id} completed via engine!")
             return
 
-        # Fallback: Python/ffmpeg montage (silent) + Topaz HD upscale.
+        # Fallback: Python/ffmpeg montage + Topaz HD upscale + song audio mux.
         beat_grid = await analyze_audio_beats(request.song_id, request.clip_urls)
         update_job("compositing", 50)
         composed_video_url = await compose_final_video(
@@ -552,6 +593,9 @@ async def beat_sync_pipeline(job_id: str, request: BeatSyncRequest):
             song_id=request.song_id
         )
         final_video_url = await upscale_video(composed_video_url, on_progress=on_fal_progress)
+        # The Python montage is silent — mux the selected track so prod output
+        # has music even without the C++ engine (starts at the chosen drop).
+        final_video_url = await _mux_song_audio(job_id, final_video_url, request)
         update_job("completed", 100, final_video_url)
         print(f"Beat sync job {job_id} completed (fallback path)!")
         
